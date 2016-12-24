@@ -7,7 +7,7 @@ Deadbolt NFC lock control using an Arduino.
 Follow [Adafruit's tutorial](https://learn.adafruit.com/adafruit-pn532-rfid-nfc/overview) on wiring the PN532 NFC shield to the Arduino.
 Their tutorial also covers [downloading necessary libraries](https://learn.adafruit.com/adafruit-pn532-rfid-nfc/arduino-library) for programming the hardware.
 
-Before compiling and flashing the firmware, use an example sketch from the Adafruit library to read your NFC does.
+Before compiling and flashing the firmware, use an example sketch from the Adafruit library to read the code from your NFC device.
 Create `authorized-ids.h` and add the codes you'd like to authorize:
 
 ```c
