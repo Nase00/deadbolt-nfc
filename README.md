@@ -75,6 +75,18 @@ With everything assembled, test that your deadbolt can still be unlocked with a 
 It's highly recommended that you still carry normal keys in case of power or hardware failure!
 Also, you may want to leave a second door unlocked while testing, in case the servo jams and prevents unlocking the door from the outside.
 
+# Advanced - [Pantheon](https://github.com/Nase00/pantheon) Integration
+This project has built-in support for Pantheon's [custom state](https://github.com/Nase00/pantheon/blob/master/docs/state.md) feature.
+Both the deadbolt state (locked and unlocked) and the door itself (ajar/closed) can be synced with a Pantheon instance.
+
+Follow the Pantheon documention to configure your instance to track deadbolt and door state.
+
+For the door state, you'll need to wire a [magnet contact switch](https://www.adafruit.com/product/375) to ground and **D4** on the Photon.
+
+You'll also need to wire together 2 additional pairs of pins between the Arduino and Photon: **4** (Arduino) to **D1** (Photon) and **3** (Arduino) to **D2** (Photon).
+
+Finally, create a Webhook through the Particle integrations app. Copy [these](./deadbolt-nfc-advanced.png) form fields, substituting your unique Pantheon `id` and address.
+
 # Troubleshooting
 
 ### The servo doesn't turn correctly to lock or unlock the deadbolt

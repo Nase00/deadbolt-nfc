@@ -8,7 +8,7 @@
 #include <SPI.h>
 
 #include <Servo.h>
-#include "authorized-ids.h"
+#include "authorized_ids.h"
 
 #define IRQ 6
 #define RESET 8
@@ -18,11 +18,13 @@ Servo servo;
 const int LOCKED_POS = 45;
 const int UNLOCKED_POS = 0;
 const int BUTTON_PIN = 7;
-const int ALERT_PIN = 1;
+const int LOCKED_ALERT_PIN = 4;
+const int UNLOCKED_ALERT_PIN = 3;
 const int LED_PIN = 13;
+int ALERT_PIN;
 
 int buttonState = 0;
-bool locked = true;
+bool locked = false;
 unsigned digit = 0;
 char val = 0;
 
@@ -53,19 +55,23 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
-  pinMode(ALERT_PIN, OUTPUT);
+  pinMode(LOCKED_ALERT_PIN, OUTPUT);
+  pinMode(UNLOCKED_ALERT_PIN, OUTPUT);
+
+  digitalWrite(LOCKED_ALERT_PIN, LOW);
+  digitalWrite(UNLOCKED_ALERT_PIN, LOW);
 }
 
-void feedback(bool alert) {
+void feedback(bool lockedState) {
+  ALERT_PIN = lockedState ? LOCKED_ALERT_PIN : UNLOCKED_ALERT_PIN;
+
   digitalWrite(LED_PIN, HIGH);
-  if (alert) {
-    digitalWrite(ALERT_PIN, HIGH);
-  }
-  delay(1000);
+  digitalWrite(ALERT_PIN, HIGH);
+
+  delay(500);
+
   digitalWrite(LED_PIN, LOW);
-  if (alert) {
-    digitalWrite(ALERT_PIN, LOW);
-  }
+  digitalWrite(ALERT_PIN, LOW);
 }
 
 void toggle(bool lockedState) {
@@ -85,7 +91,7 @@ void loop() {
 
   if (buttonState == HIGH) {
     toggle(locked);
-    feedback(false);
+    feedback(locked);
   }
 
   uint8_t success;
@@ -114,7 +120,7 @@ void loop() {
 
     if (isAuthorized) {
       toggle(locked);
-      feedback(false);
+      feedback(locked);
     }
   }
 }
