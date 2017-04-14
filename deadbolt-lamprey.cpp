@@ -3,13 +3,13 @@
 #define UNLOCKED_ALERT_PIN D2
 #define AJAR_PIN D4
 
-bool locked = true;
 bool wasOpened = false;
 unsigned long Timer = millis();
 unsigned long DEBOUNCE_TIMEOUT = 15000UL;
+String path = "photons.deadbolt";
 
 int handleToggle(String pw) {
-  if (pw == "hunter2") {
+  if (pw == "hunter2") { // Change this to your Pantheon ID
     digitalWrite(TRIGGER_PIN, HIGH);
     delay(100);
     digitalWrite(TRIGGER_PIN, LOW);
@@ -35,18 +35,19 @@ void loop() {
   bool ajarState = digitalRead(AJAR_PIN);
 
   if (lockStateChanged) {
-    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n}", "locked", locked == HIGH);
+    bool isLocked = locked == HIGH && unlocked == LOW;
+    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n, \"PATH\":\"%s\"\n}", "locked", !isLocked, path.c_str());
     Particle.publish("SINGLE_EVENT", data);
     delay(500);
   }
 
   if (ajarState == HIGH && millis() - Timer >= DEBOUNCE_TIMEOUT) {
-    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n}", "ajar", true);
+    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n, \"PATH\":\"%s\"\n}", "ajar", true, path.c_str());
     Particle.publish("SINGLE_EVENT", data);
     Timer = millis();
     wasOpened = true;
   } else if (wasOpened && ajarState == LOW) {
-    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n}", "ajar", false);
+    String data = String::format("{\"KEY\":\"%s\"\n, \"VALUE\":\"%d\"\n, \"PATH\":\"%s\"\n}", "ajar", false, path.c_str());
     Particle.publish("SINGLE_EVENT", data);
     Timer = millis() - DEBOUNCE_TIMEOUT;
     wasOpened = false;
