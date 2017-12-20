@@ -4,6 +4,7 @@
  */
 
 #include <Adafruit_PN532.h>
+#include <Adafruit_NeoPixel.h>
 #include <Wire.h>
 #include <SPI.h>
 
@@ -21,6 +22,9 @@ const int BUTTON_PIN = 7;
 const int LOCKED_ALERT_PIN = 4;
 const int UNLOCKED_ALERT_PIN = 3;
 const int LED_PIN = 13;
+const int NEO_PIN = 10;
+const int NUM_PIXELS = 1;
+const int FADE_DELAY = 1;
 int ALERT_PIN;
 
 int buttonState = 0;
@@ -29,6 +33,7 @@ unsigned digit = 0;
 char val = 0;
 
 Adafruit_PN532 nfc(IRQ, RESET);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_PIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
 
 void setup() {
   Serial.begin(9600);
@@ -60,6 +65,9 @@ void setup() {
 
   digitalWrite(LOCKED_ALERT_PIN, LOW);
   digitalWrite(UNLOCKED_ALERT_PIN, LOW);
+
+  strip.begin();
+  strip.show();
 }
 
 void feedback(bool lockedState) {
@@ -94,6 +102,13 @@ void loop() {
     feedback(locked);
   }
 
+  if (locked) {
+    strip.setPixelColor(0, strip.Color(0, 255, 0));
+    strip.show();
+  } else {
+    flashUnlockedWarning();
+  }
+
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
   uint8_t uidLength;
@@ -111,8 +126,7 @@ void loop() {
     cardidentifier <<= 8; cardidentifier |= uid[0];
 
     // Check if authorized
-    int i;
-    for (i = 0; i < 6; i = i + 1) {
+    for (int i = 0; i < 6; i++) {
       if (authorizedIDs[i] == cardidentifier) {
         isAuthorized = 1;
       }
@@ -122,5 +136,19 @@ void loop() {
       toggle(locked);
       feedback(locked);
     }
+  }
+}
+
+void flashUnlockedWarning() {
+  for (int i = 0; i <= 250; i++) {
+    strip.setPixelColor(0, strip.Color(i, 0, 0));
+    strip.show();
+    delay(FADE_DELAY);
+  }
+
+  for (int i = 250; i >= 0; i--) {
+    strip.setPixelColor(0, strip.Color(i, 0, 0));
+    strip.show();
+    delay(FADE_DELAY);
   }
 }
