@@ -32,6 +32,11 @@ bool locked = false;
 unsigned digit = 0;
 char val = 0;
 
+const String UP = "UP";
+const String DOWN = "DOWN";
+int i = 0;
+String direction = UP;
+
 Adafruit_PN532 nfc(IRQ, RESET);
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_PIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -95,12 +100,8 @@ void toggle(bool lockedState) {
 }
 
 void loop() {
-  buttonState = digitalRead(BUTTON_PIN);
-
-  if (buttonState == HIGH) {
-    toggle(locked);
-    feedback(locked);
-  }
+  checkButton();
+  checkNFIC();
 
   if (locked) {
     strip.setPixelColor(0, strip.Color(0, 255, 0));
@@ -108,7 +109,18 @@ void loop() {
   } else {
     flashUnlockedWarning();
   }
+}
 
+void checkButton() {
+  buttonState = digitalRead(BUTTON_PIN);
+
+  if (buttonState == HIGH) {
+    toggle(locked);
+    feedback(locked);
+  }
+}
+
+void checkNFIC() {
   uint8_t success;
   uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
   uint8_t uidLength;
@@ -139,16 +151,28 @@ void loop() {
   }
 }
 
-void flashUnlockedWarning() {
-  for (int i = 0; i <= 250; i++) {
-    strip.setPixelColor(0, strip.Color(i, 0, 0));
-    strip.show();
-    delay(FADE_DELAY);
+int setPixelIntensity() {
+  if (i >= 250 && direction == UP) {
+    direction = DOWN;
+  } else if (i <= 0 && direction == DOWN) {
+    direction = UP;
   }
 
-  for (int i = 250; i >= 0; i--) {
-    strip.setPixelColor(0, strip.Color(i, 0, 0));
-    strip.show();
-    delay(FADE_DELAY);
+  if (direction == UP) {
+    return i + 40;
+  } else {
+    return i - 40;
   }
+}
+
+void flashUnlockedWarning() {
+  i = setPixelIntensity();
+
+  Serial.println(direction);
+  Serial.println(i);
+
+  strip.setPixelColor(0, strip.Color(i, 0, 0));
+  strip.show();
+
+  delay(FADE_DELAY);
 }
