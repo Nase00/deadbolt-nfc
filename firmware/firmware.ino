@@ -1,122 +1,220 @@
-/*
- * Based heavily on Adafruit's example sketch for reading NFC input.
- * https://learn.adafruit.com/adafruit-pn532-rfid-nfc/faq
- */
-
 #include <Adafruit_PN532.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
+#include <FastLED_NeoMatrix.h>
+#include <Adafruit_PWMServoDriver.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-#include <Servo.h>
-#include "authorized_ids.h"
+#ifdef ESP8266
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiClient.h>
+ESP8266WebServer server(80);
+#else
+#include <ESPmDNS.h>
+#include <WebServer.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+WebServer server(80);
+#endif
 
-#define IRQ 6
-#define RESET 8
+#include "secrets.h"
 
-Servo servo;
+#define PN532_IRQ 14
+#define PN532_RESET 3
+#define SERVO_SHIELD_PIN 0
+#define BUTTON_PIN_BLUE 15
+#define BUTTON_PIN_YELLOW 16
+#define DOOR_SWITCH_PIN 2
+
+// Neomatrix configuration
+#define NEO_PIN 15
+#define MATRIX_TILE_WIDTH 4  // width of each individual matrix tile
+#define MATRIX_TILE_HEIGHT 8 // height of each individual matrix tile
+#define MATRIX_TILE_H 1      // number of matrices arranged horizontally
+#define MATRIX_TILE_V 1      // number of matrices arranged vertically
+#define mw (MATRIX_TILE_WIDTH * MATRIX_TILE_H)
+#define mh (MATRIX_TILE_HEIGHT * MATRIX_TILE_V)
+#define NUMMATRIX (mw * mh)
+
+#define LED_RED_MEDIUM (15 << 11)
+#define LED_GREEN_MEDIUM (31 << 5)
+
+#define SERVOMIN  150 // this is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX  600 // this is the 'maximum' pulse length count (out of 4096)
+
+#define OLED_RESET 3
 
 const int LOCKED_POS = 45;
 const int UNLOCKED_POS = 0;
-const int BUTTON_PIN = 7;
-const int LOCKED_ALERT_PIN = 4;
-const int UNLOCKED_ALERT_PIN = 3;
-const int LED_PIN = 13;
-const int NEO_PIN = 10;
-const int NUM_PIXELS = 1;
+const int NUM_PIXELS = 32;
 const int FADE_DELAY = 1;
-int ALERT_PIN;
 
 int buttonState = 0;
-bool locked = false;
-unsigned digit = 0;
-char val = 0;
+int doorState = 0; // 0 == closed, 1 == ajar
+bool lockedState = 0; // TODO might be able to dervice from reading Servo state
+unsigned long Timer = millis();
+unsigned long DEBOUNCE_TIMEOUT = 15000UL;
 
-const String UP = "UP";
-const String DOWN = "DOWN";
-int i = 0;
-String direction = UP;
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
-Adafruit_PN532 nfc(IRQ, RESET);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUM_PIXELS, NEO_PIN, NEO_GRB + NEO_KHZ800);
+#include "servo.h"
+#include "server.h"
+#include "client.h"
+
+Adafruit_SSD1306 display(128, 32, &Wire, OLED_RESET);
+Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
+uint8_t matrix_brightness = 10;
+CRGB matrixleds[NUMMATRIX];
+FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(
+    matrixleds, MATRIX_TILE_WIDTH,
+    MATRIX_TILE_HEIGHT,
+    MATRIX_TILE_H,
+    MATRIX_TILE_V,
+    NEO_MATRIX_BOTTOM + NEO_MATRIX_RIGHT + NEO_MATRIX_COLUMNS + NEO_MATRIX_ZIGZAG + NEO_TILE_TOP + NEO_TILE_LEFT + NEO_TILE_ZIGZAG);
+const uint16_t colors[] = {
+  matrix->Color(255, 0, 0),
+  matrix->Color(0, 255, 0),
+  matrix->Color(0, 0, 255)
+};
 
 void setup() {
+  /* Serial */
+  #ifndef ESP8266
+    while (!Serial); // for Leonardo/Micro/Zero
+  #endif
   Serial.begin(9600);
 
-  servo.attach(9);
+  /* OLED */
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.display();
+  delay(2000);
+  display.clearDisplay();
 
+  /* Servo motor */
+  pwm.begin();
+  pwm.setPWMFreq(60);
+
+  /* NFC/RFID */
   nfc.begin();
-
+  Wire.setClockStretchLimit(2000);
+  nfc.setPassiveActivationRetries(1);
+  nfc.SAMConfig();
   uint32_t versiondata = nfc.getFirmwareVersion();
-  if (! versiondata) {
+  if (!versiondata) {
     Serial.print("Didn't find PN53x board");
-    while (1); // halt
+    while (1);
   }
   Serial.println((versiondata>>24) & 0xFF, HEX);
 
-  // Set the max number of retry attempts to read from a card
-  // This prevents us from waiting forever for a card, which is
-  // the default behaviour of the PN532.
-  nfc.setPassiveActivationRetries(1);
+  /* Inputs */
+  pinMode(BUTTON_PIN_BLUE, INPUT);
+  pinMode(BUTTON_PIN_YELLOW, INPUT);
+  pinMode(DOOR_SWITCH_PIN, INPUT);
 
-  nfc.SAMConfig();
+  /* Neomatrix */
+  FastLED.addLeds<NEOPIXEL, NEO_PIN>(matrixleds, NUMMATRIX);
+  matrix->begin();
+  matrix->setBrightness(matrix_brightness);
 
-  servo.write(UNLOCKED_POS);
+  /* WiFi server */
+  WiFi.begin(SSID, PASSWORD);
+  // TODO figure out why this causes the connection to take forever
+  // WiFi.config(staticIP, subnet, gateway, dns);
 
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT);
-  pinMode(LOCKED_ALERT_PIN, OUTPUT);
-  pinMode(UNLOCKED_ALERT_PIN, OUTPUT);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
 
-  digitalWrite(LOCKED_ALERT_PIN, LOW);
-  digitalWrite(UNLOCKED_ALERT_PIN, LOW);
+#ifdef ESP8266
+  if (MDNS.begin("esp8266")) {
+#else
+  if (MDNS.begin("esp32")) {
+#endif
+    Serial.println("MDNS responder started");
+  }
+  server.on("/", handleRoot);
+  server.onNotFound(handleNotFound);
+  const char *headerkeys[] = { "passcode", "task" };
+  size_t headerkeyssize = sizeof(headerkeys) / sizeof(char *);
+  server.collectHeaders(headerkeys, headerkeyssize);
+  server.begin();
+  Serial.println("HTTP server started");
 
-  strip.begin();
-  strip.show();
+  // In case of loss of power
+  unlock();
 }
 
-void feedback(bool lockedState) {
-  ALERT_PIN = lockedState ? LOCKED_ALERT_PIN : UNLOCKED_ALERT_PIN;
-
-  digitalWrite(LED_PIN, HIGH);
-  digitalWrite(ALERT_PIN, HIGH);
-
-  delay(500);
-
-  digitalWrite(LED_PIN, LOW);
-  digitalWrite(ALERT_PIN, LOW);
+void printLines(String top, String middle, String bottom = "") {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  display.print(top);
+  display.setCursor(0, 12);
+  display.println(middle);
+  display.setCursor(0, 24);
+  display.println(bottom);
+  display.display();
 }
 
-void toggle(bool lockedState) {
-  if (lockedState) {
-    servo.write(UNLOCKED_POS);
-    locked = false;
-    delay(500);
-  } else {
-    servo.write(LOCKED_POS);
-    locked = true;
-    delay(500);
+void checkDoorState() {
+  Serial.print("Door state: ");
+  Serial.println(digitalRead(DOOR_SWITCH_PIN) == LOW);
+  if (digitalRead(DOOR_SWITCH_PIN) != LOW) {
+    doorState = 1;
+    Serial.println("OPEN");
+    Timer = millis() - DEBOUNCE_TIMEOUT;
+  } else if (millis() - Timer >= DEBOUNCE_TIMEOUT) {
+    doorState = 0;
+    Serial.println("CLOSED");
+    Timer = millis();
   }
 }
 
 void loop() {
+  int prevLocked = lockedState;
+  int prevDoorstate = doorState;
+
+  logDeviceData();
+
+  if (lockedState) {
+    matrix->fillScreen(LED_GREEN_MEDIUM);
+    matrix->show();
+  } else {
+    matrix->fillScreen(LED_RED_MEDIUM);
+    matrix->show();
+  }
+
+  server.handleClient();
+
+  printLines(
+    lockedState ? "Locked" : "Unlocked",
+    doorState ? "Open" : "Closed",
+    WiFi.localIP().toString());
+
   checkButton();
+  checkDoorState();
   checkNFIC();
 
-  if (locked) {
-    strip.setPixelColor(0, strip.Color(0, 255, 0));
-    strip.show();
-  } else {
-    flashUnlockedWarning();
+  if (lockedState != prevLocked || doorState != prevDoorstate) {
+    String lockedStateString = lockedState ? "true" : "false";
+    String doorStateString = doorState ? "true" : "false";
+    String requestData = String("[{\"type\": \"EMIT_CUSTOM_STATE_UPDATE\", \"stateUpdates\": {\"locked\": " + lockedStateString +  ", \"ajar\": " + doorStateString + "}}]\r\n");
+    Serial.println(requestData);
+    sendRequest(requestData);
   }
 }
 
 void checkButton() {
-  buttonState = digitalRead(BUTTON_PIN);
+  buttonState = digitalRead(BUTTON_PIN_BLUE);
 
   if (buttonState == HIGH) {
-    toggle(locked);
-    feedback(locked);
+    toggle();
   }
 }
 
@@ -130,6 +228,7 @@ void checkNFIC() {
   uint32_t cardidentifier = 0;
 
   if (success) {
+    Serial.println("Card read");
     int isAuthorized = 0;
 
     cardidentifier = uid[3];
@@ -137,42 +236,35 @@ void checkNFIC() {
     cardidentifier <<= 8; cardidentifier |= uid[1];
     cardidentifier <<= 8; cardidentifier |= uid[0];
 
+    if (cardidentifier) Serial.println(cardidentifier);
+
     // Check if authorized
-    for (int i = 0; i < 6; i++) {
-      if (authorizedIDs[i] == cardidentifier) {
+    for (int i = 0; i < AUTHORIZED_IDS_AMOUNT; i++) {
+      if (AUTHORIZED_IDS[i] == cardidentifier) {
         isAuthorized = 1;
       }
     }
 
     if (isAuthorized) {
-      toggle(locked);
-      feedback(locked);
+      printLines("ACCESS GRANTED", String(cardidentifier));
+      toggle();
+    } else {
+      printLines("ACCESS DENIED", String(cardidentifier));
     }
-  }
-}
 
-int setPixelIntensity() {
-  if (i >= 250 && direction == UP) {
-    direction = DOWN;
-  } else if (i <= 0 && direction == DOWN) {
-    direction = UP;
-  }
-
-  if (direction == UP) {
-    return i + 40;
+    delay(500);
   } else {
-    return i - 40;
+    Serial.println(success);
   }
 }
 
-void flashUnlockedWarning() {
-  i = setPixelIntensity();
+void logDeviceData() {
+  Serial.print("Device IP: ");
+  Serial.println(WiFi.localIP());
 
-  Serial.println(direction);
-  Serial.println(i);
+  Serial.print("Device MAC: ");
+  Serial.println(WiFi.macAddress());
 
-  strip.setPixelColor(0, strip.Color(i, 0, 0));
-  strip.show();
-
-  delay(FADE_DELAY);
+  Serial.print("Memory heap: ");
+  Serial.println(ESP.getFreeHeap());
 }

@@ -8,28 +8,48 @@ Follow [Adafruit's tutorial](https://learn.adafruit.com/adafruit-pn532-rfid-nfc/
 Their tutorial also covers [downloading necessary libraries](https://learn.adafruit.com/adafruit-pn532-rfid-nfc/arduino-library) for programming the hardware.
 
 Before compiling and flashing the firmware, use an example sketch from the Adafruit library to read the code from your NFC device.
-Create `authorized-ids.h` and add the codes you'd like to authorize:
+Create `secrets.h` and add the required information:
 
 ```c
-const unsigned long int authorizedIDs[] = {
-  1234567812345678, // Example NFC ID
-  8765432187654321 // Example NFC ID
+const unsigned long int AUTHORIZED_IDS[2] = {
+  1234567812345678, // Example RFID
+  8765432187654321 // Example RFID
 };
-// Use one of the Adafruit example NFC sketches to read your tags' IDs
+// Use the Arduino Serial Monitor to copy IDs once you've scanned them,
+// then re-flash the firmware with your IDs added.
+
+// WiFi credentials
+const char *SSID = "ithurtswhenip";
+const char *PASSWORD = "hunter";
+
+// Passcode required to open lock over WiFi
+const char *SECRET_PASSCODE = "hunter2";
+
+// Door state service configuration
+const char* DOOR_STATE_SERVICE_HOST = "192.168.x.x";
+const char* DOOR_STATE_SERVICE_PATH = "/";
+const char* DOOR_STATE_SERVICE_ID = "rear";
+const char* DOOR_STATE_SERVICE_PASSCODE = "hunter2";
+
+// Static IP configuration
+IPAddress staticIP(192, 168, 1, 123);
+IPAddress gateway(0, 0, 0, 0);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress dns(8, 8, 8, 8);
 ```
 
 Using the [Arduino IDE](https://www.arduino.cc/en/Main/Software), flash [deadbolt.cpp](./deadbolt.cpp) and `authorized-ids.h` to your Arduino.
 
 ### Required Hardware
 
-* [Arduino Uno Rev3](https://store-usa.arduino.cc/products/a000066)
-* [PN532 NFC/RFID controller breakout board - v1.6](https://www.adafruit.com/products/364)
-* Servo motor with strong torque (I use [this](https://www.amazon.com/gp/product/B013QUOKU6))
-* A pipe bracket that can fit onto your deadbolt knob, constructor set pieces, double-sided tape, hot glue, and some creativity
-* Some kind of enclosure and double-sided tape for holding the circuitry on the inside of the door (I use [this](https://www.amazon.com/gp/product/B007IUOG5A))
-* A momentary pushbutton for easy locking and unlocking from inside (I use [this](https://www.adafruit.com/products/1478))
-* [Particle Photon](https://store.particle.io/#photon) (optional, for web connectivity)
-* One or more NFC tags
+- [Arduino Uno Rev3](https://store-usa.arduino.cc/products/a000066)
+- [PN532 NFC/RFID controller breakout board - v1.6](https://www.adafruit.com/products/364)
+- Servo motor with strong torque (I use [this](https://www.amazon.com/gp/product/B013QUOKU6))
+- A pipe bracket that can fit onto your deadbolt knob, constructor set pieces, double-sided tape, hot glue, and some creativity
+- Some kind of enclosure and double-sided tape for holding the circuitry on the inside of the door (I use [this](https://www.amazon.com/gp/product/B007IUOG5A))
+- A momentary pushbutton for easy locking and unlocking from inside (I use [this](https://www.adafruit.com/products/1478))
+- [Particle Photon](https://store.particle.io/#photon) (optional, for web connectivity)
+- One or more NFC tags
 
 Wire the following:
 
@@ -76,6 +96,7 @@ It's highly recommended that you still carry normal keys in case of power or har
 Also, you may want to leave a second door unlocked while testing, in case the servo jams and prevents unlocking the door from the outside.
 
 # Advanced - [Pantheon](https://github.com/Nase00/pantheon) Integration
+
 This project has built-in support for Pantheon's [custom state](https://github.com/Nase00/pantheon/blob/master/docs/state.md) feature.
 Both the deadbolt state (locked and unlocked) and the door itself (ajar/closed) can be synced with a Pantheon instance.
 
@@ -90,5 +111,6 @@ Finally, create a Webhook through the Particle integrations app. Copy [these](./
 # Troubleshooting
 
 ### The servo doesn't turn correctly to lock or unlock the deadbolt
+
 You may need to adjust the servo's open and closed rotations to your setup.
 To do this, modify the `LOCKED_POS` and `UNLOCKED_POS` variables in [deadbolt.cpp](./deadbolt.cpp).
